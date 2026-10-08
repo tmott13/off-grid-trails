@@ -1,0 +1,226 @@
+<header class="top">
+  @if (pack(); as p) {
+    <button class="icon-btn" (click)="close()" aria-label="Back to my packs">←</button>
+    <div class="title">
+      <h1>{{ p.name }}</h1>
+      <span class="sub">{{ p.region }}</span>
+    </div>
+  } @else {
+    <div class="title">
+      <h1>Off-Grid Trails</h1>
+      <span class="sub">Trails that still work when the bars are gone</span>
+    </div>
+  }
+  <span class="signal" [class.off]="!online()">{{ online() ? '📶 Online' : '🌲 No signal' }}</span>
+</header>
+
+<main>
+  @if (!pack()) {
+    <!-- ===================== HOME ===================== -->
+    <section class="hero">
+      <p class="lead">Download a trail pack <b>before</b> you leave cell service. Once it’s saved, the map, your
+        car pin, the way back and on-device Gemma all work in airplane mode.</p>
+      <div class="ready-row">
+        <span class="pill" [class.ok]="swReady()">{{ swReady() ? '✓ App saved for offline' : '… Saving app for offline' }}</span>
+        <span class="pill" [class.ok]="ai.state() === 'ready'">
+          {{ ai.state() === 'ready' ? '✓ Gemma on this phone' : ai.state() === 'unsupported' ? 'Gemma needs WebGPU' : 'Gemma not downloaded' }}
+        </span>
+      </div>
+    </section>
+
+    @if (busy()) { <p class="banner busy">⏳ {{ busy() }}</p> }
+    @if (notice()) { <p class="banner">{{ notice() }}</p> }
+
+    <section class="card">
+      <h2>My packs <small>(on this phone)</small></h2>
+      @for (p of packs(); track p.id) {
+        <div class="pack-row">
+          <button class="pack-open" (click)="open(p)">
+            <b>{{ p.name }}</b>
+            <span>{{ trailCount(p) }} named trails · {{ p.pois.length }} places · saved {{ ageOf(p) }}</span>
+          </button>
+          <button class="ghost small" (click)="remove(p)" aria-label="Remove pack">✕</button>
+        </div>
+      } @empty {
+        <p class="muted">Nothing saved yet. Grab a pack below while you have Wi-Fi.</p>
+      }
+    </section>
+
+    <section class="card">
+      <h2>Get a trail pack</h2>
+      @if (!online()) {
+        <p class="muted">You’re offline. Packs download when you’re back in service.</p>
+      } @else {
+        <button class="primary wide" (click)="packAroundMe()" [disabled]="!!busy()">📍 Pack trails around me (3 km)</button>
+        @for (a of areas(); track a.id) {
+          <div class="area-row">
+            <div><b>{{ a.name }}</b><span class="muted"> · {{ a.region }}</span></div>
+            <button class="small" [class.done]="isSaved(a.id)" (click)="download(a)" [disabled]="!!busy()">
+              {{ isSaved(a.id) ? 'Update' : 'Download' }}
+            </button>
+          </div>
+        }
+      }
+    </section>
+
+    <ng-container *ngTemplateOutlet="gemma" />
+  } @else {
+    <!-- ===================== ON THE TRAIL ===================== -->
+    <section class="locbar">
+      @if (loc.mode() === 'off') {
+        <button class="primary" (click)="loc.startGps()">📡 Use my GPS</button>
+        <button class="ghost" (click)="demoWalk()">🚶 Demo walk</button>
+      } @else {
+        <span class="live">{{ loc.mode() === 'demo' ? '🚶 Demo walk' : '📡 GPS on' }}
+          @if (loc.accuracy() && loc.mode() === 'gps') { <small>±{{ loc.accuracy() }} m</small> }</span>
+        <button class="ghost small" (click)="loc.stop()">Stop</button>
+      }
+    </section>
+    @if (loc.error()) { <p class="banner">{{ loc.error() }}</p> }
+
+    <!-- Map -->
+    <section class="map-wrap">
+      <svg class="map" [attr.viewBox]="viewBox()" preserveAspectRatio="xMidYMid meet"
+           (pointerdown)="onDown($event)" (pointermove)="onMove($event)" (pointerup)="onUp()"
+           (pointercancel)="onUp()" (wheel)="onWheel($event)">
+        @for (l of lines(); track l.id) {
+          <polyline [attr.points]="l.points" class="trail" [class.named]="l.named" [class.road]="l.kind === 'track'" />
+        }
+        @if (crumbs().length > 1) { <polyline [attr.points]="crumbPoints()" class="crumbs" /> }
+        @for (m of poiMarks(); track m.id) {
+          <text [attr.x]="m.xy[0]" [attr.y]="m.xy[1]" [attr.font-size]="iconSize()" class="poi">{{ icon[m.type] }}</text>
+        }
+        @if (carXY(); as c) {
+          <text [attr.x]="c[0]" [attr.y]="c[1]" [attr.font-size]="iconSize() * 1.3" class="poi">🚗</text>
+        }
+        @if (meXY(); as me) {
+          <circle [attr.cx]="me[0]" [attr.cy]="me[1]" [attr.r]="iconSize() * 0.9" class="halo" />
+          <circle [attr.cx]="me[0]" [attr.cy]="me[1]" [attr.r]="iconSize() * 0.32" class="me" />
+        }
+      </svg>
+      <div class="map-ctrl">
+        <button class="icon-btn" (click)="zoom(1 / 1.5)" aria-label="Zoom in">＋</button>
+        <button class="icon-btn" (click)="zoom(1.5)" aria-label="Zoom out">－</button>
+        <button class="icon-btn" [class.on]="follow()" (click)="recenter()" aria-label="Center on me">◎</button>
+      </div>
+      <span class="north">N ↑</span>
+    </section>
+
+    <!-- Status cards -->
+    <section class="cards">
+      <div class="card stat">
+        <span class="k">Nearest trail</span>
+        @if (nearest(); as n) {
+          <b>{{ n.name }}</b>
+          <span>{{ n.onTrail ? 'You’re on it ✓' : fmt(n.distance) + ' ' + n.dir }}</span>
+        } @else {
+          <span class="muted">Turn on GPS or try the demo walk</span>
+        }
+      </div>
+      <div class="card stat car">
+        <span class="k">Your car</span>
+        @if (toCar(); as c) {
+          <div class="way">
+            <span class="arrow" [style.transform]="'rotate(' + c.bearing + 'deg)'">↑</span>
+            <div><b>{{ fmt(c.distance) }}</b><span>{{ c.dir }}</span></div>
+          </div>
+          <button class="ghost small" (click)="clearCar()">Clear pin</button>
+        } @else {
+          <span class="muted">Drop a pin at the trailhead</span>
+          <button class="small" (click)="dropCar()" [disabled]="!loc.pos()">🚗 I parked here</button>
+        }
+      </div>
+    </section>
+
+    <!-- Ask -->
+    <section class="card ask">
+      <h2>Ask {{ ai.state() === 'ready' ? 'Gemma (on your phone)' : 'the trail buddy' }}</h2>
+      <div class="chips">
+        @for (c of chips; track c.id) {
+          <button class="chip" (click)="ask(c)">{{ c.label }}</button>
+        }
+      </div>
+      @if (ai.state() === 'ready') {
+        <form class="ask-row" (submit)="$event.preventDefault(); ask()">
+          <input [value]="draft()" (input)="setDraft($event)" placeholder="Ask anything about where you are…" />
+          <button class="primary" type="submit">Ask</button>
+        </form>
+      }
+      @for (a of answers(); track $index) {
+        <div class="answer" [class.thinking]="a.thinking">
+          <span class="q">{{ a.q }}</span>
+          <p>{{ a.text }}</p>
+          <span class="by">{{ a.by === 'gemma' ? '✨ Gemma, on-device' : '📴 Offline answer' }}</span>
+        </div>
+      }
+    </section>
+
+    <!-- Nearby -->
+    <section class="card">
+      <h2>Nearby</h2>
+      @for (x of nearby(); track x.id) {
+        <div class="near-row">
+          <span class="ic">{{ icon[x.type] }}</span>
+          <span class="nm">{{ x.name || label[x.type] }}</span>
+          <span class="d">{{ fmt(x.d) }} {{ x.dir }}</span>
+        </div>
+      } @empty {
+        <p class="muted">Turn on GPS to see what’s close.</p>
+      }
+    </section>
+
+    <section class="card">
+      <h2>Breadcrumbs</h2>
+      <p class="muted">The orange line is the path you walked ({{ crumbs().length }} points, saved on this phone).
+        Following it back is safer than cutting straight to your car.</p>
+      <button class="ghost small" (click)="clearCrumbs()">Start a fresh trail</button>
+    </section>
+
+    <ng-container *ngTemplateOutlet="gemma" />
+  }
+
+  <aside class="safety">
+    <b>Be safe out there.</b> This app is a helpful companion, not a replacement for a paper map, a charged
+    phone, enough water, and telling someone your plan. If you’re lost or hurt, stay put and try 911;
+    emergency calls and texts can sometimes connect when normal service can’t.
+  </aside>
+</main>
+
+<footer>
+  Trail data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL).
+  AI: Gemma, running on your device with <a href="https://webllm.mlc.ai" target="_blank" rel="noopener">WebLLM</a>.
+</footer>
+
+<ng-template #gemma>
+  <section class="card gemma">
+    <h2>✨ Gemma on your phone</h2>
+    @switch (ai.state()) {
+      @case ('unsupported') {
+        <p class="muted">This browser doesn’t have WebGPU, so Gemma can’t run here. Everything else still works offline.
+          (On iPhone, use iOS 26 or later in Safari.)</p>
+      }
+      @case ('idle') {
+        <p class="muted">Download a small Gemma model once, on Wi-Fi (about 700 MB). After that it answers with zero signal,
+          and nothing you ask leaves your phone.</p>
+        <button class="primary" (click)="ai.load()" [disabled]="!online()">Download Gemma</button>
+      }
+      @case ('downloading') {
+        <p>Downloading… {{ ai.progress() }}%</p>
+        <progress max="100" [value]="ai.progress()"></progress>
+        <p class="muted tiny">{{ ai.status() }}</p>
+      }
+      @case ('loading') {
+        <p>Waking Gemma up… {{ ai.progress() }}%</p>
+        <progress max="100" [value]="ai.progress()"></progress>
+      }
+      @case ('ready') {
+        <p>✓ Ready offline · <code>{{ ai.modelId() }}</code></p>
+        <button class="ghost small" (click)="ai.remove()">Remove from phone</button>
+      }
+      @case ('error') {
+        <p class="muted">Gemma couldn’t load on this device (it may be short on memory). The offline buttons still work.</p>
+        <p class="muted tiny">{{ ai.status() }}</p>
+      }
+    }
+  </section>
+</ng-template>

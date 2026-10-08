@@ -1,0 +1,17 @@
+:root {
+  --forest: #1f4d3a;
+  --forest-2: #2f6b52;
+  --moss: #dfe8d6;
+  --cream: #fbf6ec;
+  --bark: #3b2f25;
+  --orange: #e86a2b;
+  --muted: #6d6a5f;
+  --line: #e4dccb;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--cream); color: var(--bark);
+  font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-text-size-adjust: 100%; }
+button { font: inherit; cursor: pointer; }
+a { color: var(--forest-2); }

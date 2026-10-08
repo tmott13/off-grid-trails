@@ -6,7 +6,8 @@
     "dev": "ng serve --proxy-config proxy.conf.json",
     "api": "node --watch server.mjs",
     "build": "ng build",
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "bake": "node bake-packs.mjs"
   },
   "private": true,
   "packageManager": "npm@10.9.4",

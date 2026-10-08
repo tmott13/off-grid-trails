@@ -45,6 +45,17 @@ The service worker only runs in the production build (`npm run build && npm star
 
 GPS works without cell service: the phone talks to satellites, not towers.
 
+## Bake the trail packs (do this before deploying)
+
+The public Overpass servers often refuse requests from cloud hosts like Render. So the preset areas are downloaded once on your own computer and shipped with the app:
+
+```bash
+npm run bake          # writes packs/*.json (takes a minute or two)
+git add packs && git commit -m "Bake trail packs"
+```
+
+Re-run it whenever you want fresher trail data. "Pack trails around me" still calls Overpass live, so it may fail on the hosted app; it always works locally.
+
 ## Deploy to Render
 
 1. Push this folder to a new GitHub repo.

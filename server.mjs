@@ -9,8 +9,10 @@ import { AREAS } from './areas.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const OVERPASS = (process.env.OVERPASS_URLS ||
-  'https://overpass-api.de/api/interpreter,https://overpass.private.coffee/api/interpreter')
+  'https://overpass-api.de/api/interpreter,https://overpass.private.coffee/api/interpreter,https://maps.mail.ru/osm/tools/overpass/api/interpreter')
   .split(',').map(s => s.trim()).filter(Boolean);
+// Packs baked ahead of time with `npm run bake` (shipped in the repo, so presets never depend on Overpass).
+const PACKS_DIR = path.join(__dirname, 'packs');
 const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, '.pack-cache');
 const CACHE_HOURS = Number(process.env.CACHE_HOURS || 72);
 const MAX_SPAN_DEG = 0.12; // keep custom areas small (~13 km)
@@ -98,7 +100,7 @@ export function buildPack(raw, meta) {
   };
 }
 
-async function fetchOverpass(bbox) {
+export async function fetchOverpass(bbox) {
   const body = 'data=' + encodeURIComponent(overpassQuery(bbox));
   let err;
   for (const url of OVERPASS) {
@@ -109,11 +111,15 @@ async function fetchOverpass(bbox) {
         body,
         signal: AbortSignal.timeout(100_000),
       });
-      if (!res.ok) throw new Error(`Overpass ${res.status} at ${url}`);
+      if (!res.ok) throw new Error(`Overpass ${res.status} at ${url}: ${(await res.text()).slice(0, 120)}`);
       return await res.json();
     } catch (e) { err = e; console.error(e.message); }
   }
   throw err || new Error('Overpass unavailable');
+}
+
+async function readBaked(id) {
+  try { return JSON.parse(await fs.readFile(path.join(PACKS_DIR, `${id}.json`), 'utf8')); } catch { return null; }
 }
 
 async function getPack(key, bbox, meta) {
@@ -148,12 +154,17 @@ function allowed(ip) {
 const app = express();
 app.set('trust proxy', 1);
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, overpass: OVERPASS, cachedPacks: memCache.size, lastError }));
+app.get('/api/health', async (_req, res) => {
+  const baked = (await fs.readdir(PACKS_DIR).catch(() => [])).filter(f => f.endsWith('.json')).map(f => f.replace('.json', ''));
+  res.json({ ok: true, bakedPacks: baked, overpass: OVERPASS, cachedPacks: memCache.size, lastError });
+});
 app.get('/api/areas', (_req, res) => res.json(AREAS));
 
 app.get('/api/areas/:id/pack', async (req, res) => {
   const area = AREAS.find(a => a.id === req.params.id);
   if (!area) return res.status(404).json({ error: 'Unknown area' });
+  const baked = await readBaked(area.id);
+  if (baked) return res.json(baked);
   if (!allowed(req.ip)) return res.status(429).json({ error: 'Too many packs, try again later.' });
   try {
     res.json(await getPack(area.id, area.bbox, { id: area.id, name: area.name, region: area.region, bbox: area.bbox }));

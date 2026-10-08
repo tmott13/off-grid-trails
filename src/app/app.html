@@ -218,8 +218,16 @@
         <button class="ghost small" (click)="ai.remove()">Remove from phone</button>
       }
       @case ('error') {
-        <p class="muted">Gemma couldn’t load on this device (it may be short on memory). The offline buttons still work.</p>
+        <p class="muted">Gemma couldn’t load on this device (it may be short on memory). Everything else, including
+          the question buttons, still works offline.</p>
         <p class="muted tiny">{{ ai.status() }}</p>
+        @if (ai.crashed()) {
+          <p class="muted tiny">Tip: close other apps and Safari tabs, then try once more.</p>
+        }
+        <div class="btn-row">
+          <button class="small" (click)="ai.load()" [disabled]="!online()">Try again</button>
+          <button class="ghost small" (click)="ai.remove()">Remove download</button>
+        </div>
       }
     }
   </section>

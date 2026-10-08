@@ -97,3 +97,5 @@ button.wide { width: 100%; margin-bottom: 8px; }
 .safety { font-size: 0.85rem; line-height: 1.45; padding: 12px 14px; border-radius: 14px; background: #fff3e8; border-left: 4px solid var(--orange); }
 
 footer { padding: 6px 16px calc(20px + env(safe-area-inset-bottom)); font-size: 0.75rem; color: var(--muted); text-align: center; }
+
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }

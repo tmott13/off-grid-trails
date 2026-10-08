@@ -1,8 +1,22 @@
 import { Injectable, signal } from '@angular/core';
 import type { MLCEngine } from '@mlc-ai/web-llm';
 
-/** Small Gemma first; the 2B model is the backup if the 1B one won't load on this device. */
-const MODELS = ['gemma3-1b-it-q4f16_1-MLC', 'gemma-2-2b-it-q4f16_1-MLC-1k'];
+/** Small Gemma first; the 2B model is the backup, but never on iPhone/iPad (it needs too much memory). */
+const IOS = typeof navigator !== 'undefined' &&
+  (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+const MODELS = IOS ? ['gemma3-1b-it-q4f16_1-MLC'] : ['gemma3-1b-it-q4f16_1-MLC', 'gemma-2-2b-it-q4f16_1-MLC-1k'];
+/** A short context window keeps memory low. Our prompts are ~500 tokens. */
+const CHAT_OPTS = { context_window_size: 1024 };
+
+// Crash guard: if Safari kills the tab while Gemma loads, we remember it and never auto-load again,
+// so the app can't get stuck in a crash loop.
+const LOADING = 'ogt.gemma.loading';
+const OK = 'ogt.gemma.ok';
+const flag = {
+  get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+  del: (k: string) => { try { localStorage.removeItem(k); } catch { /* private mode */ } },
+};
 
 export type AiState = 'unsupported' | 'idle' | 'downloading' | 'loading' | 'ready' | 'error';
 
@@ -22,12 +36,23 @@ export class LocalAiService {
   readonly progress = signal(0);
   readonly status = signal('');
   readonly modelId = signal<string | null>(null);
+  /** True when the last load attempt crashed the page. */
+  readonly crashed = signal(false);
 
   private engine: MLCEngine | null = null;
 
   /** Load straight away if the model is already on the phone (no network needed). */
   async loadIfCached() {
     if (this.state() !== 'idle') return;
+    if (flag.get(LOADING)) {
+      flag.del(LOADING);
+      flag.del(OK);
+      this.crashed.set(true);
+      this.state.set('error');
+      this.status.set('Gemma closed the page last time it loaded, most likely because the phone ran short on memory.');
+      return;
+    }
+    if (!flag.get(OK)) return; // only auto-load after one successful load
     try {
       const { hasModelInCache } = await import('@mlc-ai/web-llm');
       for (const id of MODELS) {
@@ -41,6 +66,8 @@ export class LocalAiService {
   /** One-time download (~700 MB for Gemma 3 1B). Do this on Wi-Fi before the trip. */
   async load(preferred?: string) {
     if (this.engine || this.state() === 'unsupported') return;
+    this.crashed.set(false);
+    flag.set(LOADING, String(Date.now()));
     const webllm = await import('@mlc-ai/web-llm');
     const order = preferred ? [preferred, ...MODELS.filter(m => m !== preferred)] : MODELS;
     for (const id of order) {
@@ -52,8 +79,10 @@ export class LocalAiService {
             this.progress.set(Math.round(r.progress * 100));
             this.status.set(r.text);
           },
-        });
+        }, CHAT_OPTS);
         this.modelId.set(id);
+        flag.del(LOADING);
+        flag.set(OK, id);
         this.state.set('ready');
         return;
       } catch (e) {
@@ -61,6 +90,7 @@ export class LocalAiService {
         this.status.set(String((e as Error)?.message ?? e));
       }
     }
+    flag.del(LOADING);
     this.state.set('error');
   }
 
@@ -83,6 +113,7 @@ export class LocalAiService {
     this.engine = null;
     for (const id of MODELS) await deleteModelAllInfoInCache(id).catch(() => {});
     this.modelId.set(null);
+    flag.del(OK);
     this.state.set('idle');
   }
 }

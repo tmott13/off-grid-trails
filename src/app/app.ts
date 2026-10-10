@@ -75,6 +75,9 @@ export class App implements OnInit {
     const o = this.origin();
     return p.pois
       .filter(x => x.type !== 'toilets' && x.type !== 'parking')
+      // Skip icons of the same kind stacked within ~100 m so the map stays readable.
+      .filter((x, i, all) => all.findIndex(y => y.type === x.type
+        && Math.abs(y.lat - x.lat) < 0.001 && Math.abs(y.lon - x.lon) < 0.001) === i)
       .map(x => ({ ...x, xy: project([x.lat, x.lon], o) }));
   });
 
@@ -127,6 +130,8 @@ export class App implements OnInit {
         return { ...x, d: distance(pos, at), dir: compass(bearing(pos, at)) };
       })
       .sort((a, b) => a.d - b.d)
+      // One row per place: OSM often maps the same spot as both a peak and a viewpoint.
+      .filter((x, i, all) => !x.name || all.findIndex(y => y.name === x.name) === i)
       .slice(0, 6);
   });
 

@@ -51,7 +51,9 @@ export class LocationService {
     this.mode.set('demo');
     this.error.set(null);
     this.accuracy.set(5);
-    const pts = densify(trail.coords, 4);
+    // Walk out and back so the loop never jumps from the end of the trail to the start.
+    const out = densify(trail.coords, 4);
+    const pts = [...out, ...out.slice(1, -1).reverse()];
     let i = 0;
     this.pos.set(pts[0]);
     this.demoTimer = setInterval(() => {

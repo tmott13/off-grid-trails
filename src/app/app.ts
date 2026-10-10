@@ -373,8 +373,14 @@ export class App implements OnInit {
     const pending: Answer = { q, text: 'Thinking on your phone…', by: 'gemma', thinking: true };
     this.answers.update(a => [pending, ...a]);
     try {
-      const text = await this.ai.ask(q, this.facts());
-      this.answers.update(a => a.map(x => (x === pending ? { q, text: text || fallback || '…', by: 'gemma' } : x)));
+      const text = await this.ai.ask(q, this.facts(), fallback);
+      // Trust check: for a button, Gemma's version must keep the app's numbers, or we show the app's answer.
+      const nums = fallback?.match(/\d[\d.,]*/g) ?? [];
+      const trusted = !!text && nums.every(n => text.includes(n));
+      const answer: Answer = trusted || !fallback
+        ? { q, text: text || 'I don’t know from this trail pack.', by: 'gemma' }
+        : { q, text: fallback, by: 'offline' };
+      this.answers.update(a => a.map(x => (x === pending ? answer : x)));
     } catch {
       this.answers.update(a => a.map(x => (x === pending ? { q, text: fallback ?? 'Gemma had trouble. Try a button above.', by: 'offline' } : x)));
     }

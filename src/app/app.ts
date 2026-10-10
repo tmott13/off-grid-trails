@@ -7,7 +7,7 @@ import { LocationService } from './location.service';
 import { LocalAiService } from './local-ai.service';
 
 interface Chip { id: string; label: string; question: string }
-interface Answer { q: string; text: string; by: 'gemma' | 'offline'; thinking?: boolean }
+interface Answer { q: string; text: string; by: 'gemma' | 'offline'; thinking?: boolean; note?: string }
 
 const CHIPS: Chip[] = [
   { id: 'where', label: '📍 Where am I?', question: 'Where am I right now?' },
@@ -379,15 +379,20 @@ export class App implements OnInit {
     this.answers.update(a => [pending, ...a]);
     try {
       const text = await this.ai.ask(q, this.facts(), fallback);
-      // Trust check: for a button, Gemma's version must keep the app's numbers, or we show the app's answer.
-      const nums = fallback?.match(/\d[\d.,]*/g) ?? [];
-      const trusted = !!text && nums.every(n => text.includes(n));
-      const answer: Answer = trusted || !fallback
-        ? { q, text: text || 'I don’t know from this trail pack.', by: 'gemma' }
-        : { q, text: fallback, by: 'offline' };
+      // Trust check: Gemma's version must keep every distance the app worked out (e.g. "0.2 mi", "390 ft"),
+      // or we show the app's own answer. "I think I'm lost" always shows the app's safety steps.
+      const distances = fallback?.match(/\d[\d.,]*(?=\s*(?:ft|mi)\b)/g) ?? [];
+      const keepsNumbers = !!text && distances.every(n => text.includes(n));
+      const sameDirection = !fallback || directionsOk(fallback, text);
+      let answer: Answer;
+      if (!fallback) answer = { q, text: text || 'I don’t know from this trail pack.', by: 'gemma' };
+      else if (id === 'lost') answer = { q, text: fallback, by: 'offline', note: 'safety steps always come from the app' };
+      else if (keepsNumbers && sameDirection) answer = { q, text, by: 'gemma' };
+      else answer = { q, text: fallback, by: 'offline', note: text ? 'Gemma changed a detail, so the app answered' : 'Gemma gave no answer' };
       this.answers.update(a => a.map(x => (x === pending ? answer : x)));
-    } catch {
-      this.answers.update(a => a.map(x => (x === pending ? { q, text: fallback ?? 'Gemma had trouble. Try a button above.', by: 'offline' } : x)));
+    } catch (e) {
+      const note = `Gemma error: ${String((e as Error)?.message ?? e).slice(0, 80)}`;
+      this.answers.update(a => a.map(x => (x === pending ? { q, text: fallback ?? 'Gemma had trouble. Try a button above.', by: 'offline', note } : x)));
     }
   }
 
@@ -403,4 +408,17 @@ export class App implements OnInit {
   protected trailCount(p: Pack) {
     return p.trails.filter(t => t.name).length;
   }
+}
+
+const DIRS = ['northeast', 'northwest', 'southeast', 'southwest', 'north', 'south', 'east', 'west'];
+/** Every compass direction in the app's answer must also appear in Gemma's version. */
+function directionsOk(fallback: string, text: string): boolean {
+  const want = (s: string) => {
+    let rest = s.toLowerCase();
+    const found: string[] = [];
+    for (const d of DIRS) if (rest.includes(d)) { found.push(d); rest = rest.split(d).join(' '); }
+    return found;
+  };
+  const got = want(text);
+  return want(fallback).every(d => got.includes(d));
 }

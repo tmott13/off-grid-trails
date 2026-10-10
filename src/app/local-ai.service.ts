@@ -5,8 +5,11 @@ import type { MLCEngine } from '@mlc-ai/web-llm';
 const IOS = typeof navigator !== 'undefined' &&
   (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
 const MODELS = IOS ? ['gemma3-1b-it-q4f16_1-MLC'] : ['gemma3-1b-it-q4f16_1-MLC', 'gemma-2-2b-it-q4f16_1-MLC-1k'];
-/** A short context window keeps memory low. Our prompts are ~500 tokens. */
-const CHAT_OPTS = { context_window_size: 1024 };
+/**
+ * A short 1,024-token context keeps memory low (our prompts are ~500 tokens).
+ * WebLLM allows only one window setting, so the sliding window is turned off (-1).
+ */
+const CHAT_OPTS = { context_window_size: 1024, sliding_window_size: -1 };
 
 // Crash guard: if Safari kills the tab while Gemma loads, we remember it and never auto-load again,
 // so the app can't get stuck in a crash loop.
@@ -99,7 +102,7 @@ export class LocalAiService {
     const reply = await this.engine.chat.completions.create({
       messages: [
         { role: 'system', content: SYSTEM },
-        { role: 'user', content: `FACTS:\n${facts}\n\nQUESTION: ${question}` },
+        { role: 'user', content: `FACTS:\n${facts.slice(0, 1800)}\n\nQUESTION: ${question.slice(0, 300)}` },
       ],
       temperature: 0.3,
       max_tokens: 160,

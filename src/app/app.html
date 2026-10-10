@@ -150,7 +150,8 @@
         <div class="answer" [class.thinking]="a.thinking">
           <span class="q">{{ a.q }}</span>
           <p>{{ a.text }}</p>
-          <span class="by">{{ a.by === 'gemma' ? '✨ Gemma, on-device' : '📴 Offline answer' }}@if (a.note) { · {{ a.note }} }</span>
+          @if (a.tip) { <p class="tip">✨ {{ a.tip }}</p> }
+          <span class="by">{{ a.by === 'gemma' ? (a.tip ? '📍 Facts from the app · ✨ tip from Gemma, on-device' : '✨ Gemma, on-device') : '📴 Offline answer' }}@if (a.note) { · {{ a.note }} }</span>
         </div>
       }
     </section>

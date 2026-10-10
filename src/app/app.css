@@ -99,3 +99,4 @@ button.wide { width: 100%; margin-bottom: 8px; }
 footer { padding: 6px 16px calc(20px + env(safe-area-inset-bottom)); font-size: 0.75rem; color: var(--muted); text-align: center; }
 
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.answer .tip { font-style: italic; color: var(--forest); margin-top: 0; }

@@ -98,28 +98,30 @@ export class LocalAiService {
   }
 
   /**
-   * Small models ramble, so Gemma gets a tight job: answer in 1–2 sentences from the FACTS.
-   * When the app already worked out the answer (a button), Gemma just says it in a warmer way.
+   * Small models ramble and fumble numbers, so Gemma gets a tight job.
+   * Buttons: the app already has the facts, so Gemma adds ONE short, warm tip with no numbers or directions.
+   * Typed questions: Gemma answers in 1–2 sentences from the FACTS.
    * Gemma has no separate system role, so the rules go in the user message.
    */
   async ask(question: string, facts: string, draft?: string | null): Promise<string> {
     if (!this.engine) throw new Error('Gemma is not loaded');
     await this.engine.resetChat();
-    const task = draft
-      ? `Rewrite this answer in 1 or 2 short, calm sentences. Keep every distance and direction exactly as written. Do not add anything new.\nANSWER: ${draft}`
-      : `Answer the QUESTION in 1 or 2 short sentences using only the FACTS. If the FACTS don't say, reply: "I don't know from this trail pack."`;
+    const content = draft
+      ? `You are a calm trail buddy in an offline hiking app. The hiker asked: "${question.slice(0, 200)}"\n` +
+        `The app already told them: "${draft}"\n` +
+        `Add ONE short, warm, practical tip for this moment, under 20 words. ` +
+        `Do not use any numbers, distances, directions, or place names. Reply with the tip only.`
+      : `${RULES}\n\nFACTS:\n${facts.slice(0, 1500)}\n\nQUESTION: ${question.slice(0, 200)}\n\n` +
+        `Answer the QUESTION in 1 or 2 short sentences using only the FACTS. If the FACTS don't say, reply: "I don't know from this trail pack."`;
     const reply = await this.engine.chat.completions.create({
-      messages: [{
-        role: 'user',
-        content: `${RULES}\n\nFACTS:\n${facts.slice(0, 1500)}\n\nQUESTION: ${question.slice(0, 200)}\n\n${task}`,
-      }],
-      temperature: 0.2,
+      messages: [{ role: 'user', content }],
+      temperature: draft ? 0.6 : 0.2,
       top_p: 0.9,
-      max_tokens: 90,
+      max_tokens: draft ? 40 : 90,
       repetition_penalty: 1.15,
       frequency_penalty: 0.6,
     });
-    return tidy(reply.choices[0]?.message?.content ?? '');
+    return tidy(reply.choices[0]?.message?.content ?? '', draft ? 1 : 3);
   }
 
   async remove() {
@@ -133,8 +135,8 @@ export class LocalAiService {
   }
 }
 
-/** Removes repeated sentences (a common small-model loop) and keeps at most 3 sentences. */
-export function tidy(text: string): string {
+/** Removes repeated sentences (a common small-model loop) and keeps at most `max` sentences. */
+export function tidy(text: string, max = 3): string {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const raw of text.replace(/\s+/g, ' ').trim().match(/[^.!?]+[.!?]?/g) ?? []) {
@@ -143,7 +145,7 @@ export function tidy(text: string): string {
     if (!key || seen.has(key)) continue;
     seen.add(key);
     out.push(sentence);
-    if (out.length === 3) break;
+    if (out.length === max) break;
   }
   return out.join(' ');
 }

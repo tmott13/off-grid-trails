@@ -7,7 +7,7 @@ import { LocationService } from './location.service';
 import { LocalAiService } from './local-ai.service';
 
 interface Chip { id: string; label: string; question: string }
-interface Answer { q: string; text: string; by: 'gemma' | 'offline'; thinking?: boolean; note?: string }
+interface Answer { q: string; text: string; by: 'gemma' | 'offline'; thinking?: boolean; note?: string; tip?: string }
 
 const CHIPS: Chip[] = [
   { id: 'where', label: '📍 Where am I?', question: 'Where am I right now?' },
@@ -379,16 +379,18 @@ export class App implements OnInit {
     this.answers.update(a => [pending, ...a]);
     try {
       const text = await this.ai.ask(q, this.facts(), fallback);
-      // Trust check: Gemma's version must keep every distance the app worked out (e.g. "0.2 mi", "390 ft"),
-      // or we show the app's own answer. "I think I'm lost" always shows the app's safety steps.
-      const distances = fallback?.match(/\d[\d.,]*(?=\s*(?:ft|mi)\b)/g) ?? [];
-      const keepsNumbers = !!text && distances.every(n => text.includes(n));
-      const sameDirection = !fallback || directionsOk(fallback, text);
+      // Gemma never gets to restate numbers or directions on a button: the app's facts stay word for word,
+      // and Gemma adds one short tip. A tip with any number or compass word is dropped.
       let answer: Answer;
-      if (!fallback) answer = { q, text: text || 'I don’t know from this trail pack.', by: 'gemma' };
-      else if (id === 'lost') answer = { q, text: fallback, by: 'offline', note: 'safety steps always come from the app' };
-      else if (keepsNumbers && sameDirection) answer = { q, text, by: 'gemma' };
-      else answer = { q, text: fallback, by: 'offline', note: text ? 'Gemma changed a detail, so the app answered' : 'Gemma gave no answer' };
+      if (!fallback) {
+        answer = { q, text: text || 'I don’t know from this trail pack.', by: 'gemma' };
+      } else {
+        const tip = text.replace(/^["'\s]+|["'\s]+$/g, '');
+        const safe = !!tip && tip.length <= 160 && !/\d/.test(tip) && !DIR_RE.test(tip);
+        answer = safe
+          ? { q, text: fallback, tip, by: 'gemma' }
+          : { q, text: fallback, by: 'offline', note: tip ? 'Gemma’s tip mentioned a direction or number, so it was left out' : 'Gemma gave no tip' };
+      }
       this.answers.update(a => a.map(x => (x === pending ? answer : x)));
     } catch (e) {
       const note = `Gemma error: ${String((e as Error)?.message ?? e).slice(0, 80)}`;
@@ -410,15 +412,4 @@ export class App implements OnInit {
   }
 }
 
-const DIRS = ['northeast', 'northwest', 'southeast', 'southwest', 'north', 'south', 'east', 'west'];
-/** Every compass direction in the app's answer must also appear in Gemma's version. */
-function directionsOk(fallback: string, text: string): boolean {
-  const want = (s: string) => {
-    let rest = s.toLowerCase();
-    const found: string[] = [];
-    for (const d of DIRS) if (rest.includes(d)) { found.push(d); rest = rest.split(d).join(' '); }
-    return found;
-  };
-  const got = want(text);
-  return want(fallback).every(d => got.includes(d));
-}
+const DIR_RE = /\b(north|south|east|west|northeast|northwest|southeast|southwest|left|right|uphill|downhill)\b/i;
